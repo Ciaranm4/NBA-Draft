@@ -1,0 +1,161 @@
+---
+title: "NBA Draft"
+output: 
+  flexdashboard::flex_dashboard
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(DT)
+library(ggplot2)
+library(plotly)
+library(plyr)
+library(flexdashboard)
+
+startData <- read_csv("combined.csv")
+subset <- subset(startData, select = c(3,5,6,14:24))
+GBChoices <- as.list(names(subset))
+names(GBChoices) <- paste(names(subset),map(subset,~length(unique(.x))))
+
+updateData <- reactive(
+  subset %>% group_by(!!! rlang::syms(input$GB)) %>% summarise_if(is.numeric,sum,na.rm=T))
+```
+
+Simple Analysis
+=======================================================================
+Column {.sidebar}
+------------------------------------------------------------------
+```{r}
+selectInput(inputId = "GB",label = "Group By",choices = GBChoices)
+selectInput(inputId = "Metric",label = "Metric",choices = names(select_if(subset,is.numeric)))
+```
+
+Column 
+------------------------------------------------------------------
+
+### BarCharts comparing different variables
+```{r}
+renderPlot({
+ updateData() %>% 
+  ggplot(aes(x=!! rlang::sym(input$GB),y=!! rlang::sym(input$Metric),fill=!! rlang::sym(input$GB))) +
+  geom_col()
+})
+```
+
+Row
+--------------------------------------------------------------------
+### Points Per game vs Pick
+```{r}
+library(ggplot2)
+plotOutput("plot1", brush = brushOpts(id = "plot1_brush"))
+output$plot1 <- renderPlot({
+  updateData() %>% 
+  ggplot(aes(x=!! rlang::sym(input$GB),y=!! rlang::sym(input$Metric),fill=!! rlang::sym(input$GB))) + geom_point()
+})
+```
+
+
+
+
+Further Analysis
+=======================================================================
+Row
+----------------------------------------------------------------------
+### Stat density example of Organisation type
+
+
+```{r}
+p <- ggplot(startData, aes(x = WS.48)) +
+            stat_density(aes(group = ORGANIZATION_TYPE, color = ORGANIZATION_TYPE),position="identity",geom="line")
+ggplotly(p)
+```
+Row
+-----------------------------------------------------------------
+
+### Scatter Plot of Pick vs Points
+```{r}
+p <- ggplot(startData, aes(x=Pk, y=Pts)) +
+            geom_point(shape=1) + geom_smooth() # Use hollow circles
+ggplotly(p)
+```
+
+
+
+
+Box plots
+=======================================================================
+
+Column {data-width=650}
+--------------------------------------------------------------------
+### Boxplot of Pk
+```{r}
+renderPlot({
+  ggplot(startData, aes(factor(ORGANIZATION_TYPE), Yrs))  + geom_boxplot()
+})
+```
+
+### BoxPlot of Pts
+```{r}
+renderPlot({
+  ggplot(startData, aes(factor(ORGANIZATION_TYPE), Pts))  + geom_boxplot()
+})
+```
+
+Column {data-width=650}
+--------------------------------------------------------------------
+### Boxplot of VORP
+```{r}
+renderPlot({
+  ggplot(startData, aes(factor(ORGANIZATION_TYPE), VORP))  + geom_boxplot()
+})
+```
+
+### Boxplot of WS.48
+```{r}
+renderPlot({
+  ggplot(startData, aes(factor(ORGANIZATION_TYPE), WS.48))  + geom_boxplot()
+})
+```
+
+Clustering
+=====================================================================
+Column {.sidebar}
+-----------------------------------------------------------------------
+
+```{r}
+selectInput('xcol', 'X Variable', names(subset))
+    
+selectInput('ycol', 'Y Variable', names(subset),
+                selected=names(subset)[[2]])
+    
+numericInput('clusters', 'Cluster count', 3,
+              min = 1, max = 9)
+```
+
+Column
+-----------------------------------------------------------------------
+
+### K Means
+
+```{r}
+palette(c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3",
+  "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "#999999"))
+
+# Combine the selected variables into a new data frame
+selectedData <- reactive({
+  subset[, c(input$xcol, input$ycol)]
+})
+
+clusters <- reactive({
+  kmeans(selectedData(), input$clusters)
+})
+
+renderPlot({
+  par(mar = c(5.1, 4.1, 0, 1))
+  plot(selectedData(),
+       col = clusters()$cluster,
+       pch = 20, cex = 3)
+  points(clusters()$centers, pch = 4, cex = 4, lwd = 4)
+})
+```
